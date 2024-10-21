@@ -1,0 +1,228 @@
+#include <LiquidCrystal.h>
+
+
+
+// Define pins for the DS1023
+
+#define DATA_PIN 51  // MOSI pin on Arduino Mega
+
+#define CLK_PIN  52  // SCK pin on Arduino Mega
+
+#define LE_PIN   53  // Pin to control LE (latch enable)
+
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+
+
+// LCD pin connections (RS, EN, D4, D5, D6, D7)
+
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+
+
+// Frequency of the pulse in MHz (e.g., 1 MHz)
+
+#define PULSE_FREQUENCY 1 // Change this value to your desired frequency in MHz
+
+
+
+void setup() {
+
+  // Set up LCD columns and rows
+
+  lcd.begin(16, 2);  // 16 characters and 2 rows
+
+
+
+  // Display initial message
+
+  lcd.setCursor(0, 0);
+
+  lcd.print("Initializing...");
+
+
+
+  // Set pin 11 as output (connected to Timer1)
+
+  pinMode(10, OUTPUT);  // Keep Pin 11 for Timer1 (unchanged)
+
+
+
+  // Set LED pin as output
+
+  pinMode(LED_PIN, OUTPUT);
+
+
+
+  // Disable interrupts
+
+  noInterrupts();
+
+
+
+  // Configure Timer1 for Fast PWM mode
+
+  TCCR2A = _BV(COM2A0);  // Toggle OC1A on Compare Match
+
+  TCCR2B = _BV(WGM22) | _BV(CS20);  // CTC mode, no prescaler
+
+
+
+  // Set the compare value for the desired frequency
+
+  OCR2A = (16000000 / (2 * PULSE_FREQUENCY * 1000000)) - 1;
+
+
+
+  // Enable Timer1
+
+  interrupts();
+
+
+
+  // Setup serial communication for debugging
+
+  Serial.begin(9600);
+
+
+
+  // Initialize pins for DS1023
+
+  pinMode(DATA_PIN, OUTPUT);
+
+  pinMode(CLK_PIN, OUTPUT);
+
+  pinMode(LE_PIN, OUTPUT);
+
+
+
+  // Reset the DS1023 to a known state
+
+  digitalWrite(LE_PIN, LOW);  // Latch is disabled initially
+
+
+
+  // Clear LCD and print ready message
+
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+
+  lcd.print("Delay!");
+
+}
+
+
+
+void loop() {
+
+  // Loop through delay values from 0 to 250 ns in 2 ns steps
+
+  const int stepSize = 10;  // 2 ns step
+
+  const int maxDelay = 250; // Maximum delay in nanoseconds
+
+
+
+  for (int delayValue = 0; delayValue <= maxDelay; delayValue += stepSize) {
+
+    // Blink the LED to show the loop is running
+
+    digitalWrite(LED_PIN, HIGH);  // Turn the LED on
+
+    delay(50);  // Wait for 50 milliseconds
+
+    digitalWrite(LED_PIN, LOW);   // Turn the LED off
+
+    delay(50);  // Wait for 50 milliseconds
+
+
+
+    // Calculate the corresponding value to send (delayValue / stepSize)
+
+    int valueToSend = delayValue;
+
+
+
+    // Send the value to DS1023
+
+    sendDelayValue(valueToSend);
+
+
+
+    // Debug output
+
+    Serial.print("Delay set to: ");
+
+    Serial.print(delayValue);
+
+    Serial.println(" ns");
+
+
+
+    // Display the delay on the LCD
+
+    lcd.clear();
+
+    lcd.setCursor(0, 0);
+
+    lcd.print("Delay:");
+
+    lcd.setCursor(0, 1);
+
+    lcd.print(delayValue);
+
+    lcd.print(" ns");
+
+
+
+    // Small delay to allow the oscilloscope to capture the changes (adjust as needed)
+
+    delay(2000);  // 2 seconds delay between steps for visibility
+
+  }
+
+}
+
+
+
+// Function to send the delay value to the DS1023
+
+void sendDelayValue(int value) {
+
+  // Set LE high to start communication
+
+  digitalWrite(LE_PIN, HIGH);
+
+
+
+  // Clock out the 8-bit delay value (MSB first)
+
+  for (int i = 7; i >= 0; i--) {
+
+    // Write the data bit (MSB first)
+
+    digitalWrite(DATA_PIN, (value >> i) & 0x01);
+
+
+
+    // Clock the data into the chip
+
+    digitalWrite(CLK_PIN, HIGH);
+
+    delayMicroseconds(1); // Small delay for clock pulse
+
+    digitalWrite(CLK_PIN, LOW);
+
+  }
+
+  digitalWrite(DATA_PIN, LOW);
+
+  
+
+  // Set LE low to latch the value
+
+  digitalWrite(LE_PIN, LOW);
+
+}
+
