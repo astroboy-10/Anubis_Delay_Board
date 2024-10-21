@@ -24,107 +24,81 @@ void setup() {
   // Set LED pin as output
   pinMode(LED_PIN, OUTPUT);
 
-  // Setup pin 10 for Timer1 output (connected to DS1023 Pin 1)
-  pinMode(10, OUTPUT);
+  // Set pin 10 as output (connected to Timer1)
 
-  // Disable interrupts while setting up Timer1
+  pinMode(10, OUTPUT);  // Keep Pin 10 for Timer1
+
+    // Disable interrupts
+
   noInterrupts();
 
-  // Configure Timer1 for Fast PWM mode to generate pulses on pin 10
-  TCCR1A = _BV(COM1B1) | _BV(WGM11);  // Clear OC1B on compare match, Fast PWM mode (mode 14)
-  TCCR1B = _BV(WGM13) | _BV(WGM12) | _BV(CS10);  // Fast PWM mode, no prescaler
+
+
+  // Configure Timer1 for Fast PWM mode
+
+  TCCR2A = _BV(COM2A0);  // Toggle OC1A on Compare Match
+
+  TCCR2B = _BV(WGM22) | _BV(CS20);  // CTC mode, no prescaler
+
+
 
   // Set the compare value for the desired frequency
-  // Pulse Frequency in Hz = 16MHz / (2 * (ICR1 + 1))
-  ICR1 = (16000000 / (2 * PULSE_FREQUENCY * 1000000)) - 1;  // Frequency for Timer1
-  OCR1B = ICR1 / 2;  // 50% duty cycle
 
-  // Enable Timer1 interrupts
+  OCR2A = (16000000 / (2 * PULSE_FREQUENCY * 1000000)) - 1;
+
+
+
+  // Enable Timer1
+
   interrupts();
 
-  // Setup serial communication for debugging
+
+  // Setup serial communication
   Serial.begin(9600);
-
-  // Initialize pins for DS1023
-  pinMode(DATA_PIN, OUTPUT);
-  pinMode(CLK_PIN, OUTPUT);
-  pinMode(LE_PIN, OUTPUT);
-
-  // Reset the DS1023 to a known state
-  digitalWrite(LE_PIN, LOW);  // Latch is disabled initially
-
-  // Clear LCD and print ready message
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Channels Ready");
-
-  // Set the delay for all 8 channels
+  
+  // Set initial delay for each channel
   for (int channel = 0; channel < 8; channel++) {
     setChannelDelay(channel, channelDelays[channel]);
   }
 }
 
 void loop() {
-  // Blink the LED to show the loop is running
-  digitalWrite(LED_PIN, HIGH);  // Turn the LED on
-  delay(500);  // Wait for 500 milliseconds
-  digitalWrite(LED_PIN, LOW);   // Turn the LED off
-  delay(500);  // Wait for 500 milliseconds
+  // Check for incoming serial data
+  if (Serial.available() > 0) {
+    String input = Serial.readStringUntil('\n');
+    int sepIndex = input.indexOf(':');
+    int channel = input.substring(0, sepIndex).toInt();
+    int delayValue = input.substring(sepIndex + 1).toInt();
 
-  // Display each channel's delay on the LCD
-  for (int channel = 0; channel < 8; channel++) {
+    // Update the delay for the selected channel
+    channelDelays[channel] = delayValue;
+    setChannelDelay(channel, delayValue);
+    
+    // Display the updated delay on the LCD
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Channel ");
     lcd.print(channel);
-    
     lcd.setCursor(0, 1);
     lcd.print("Delay: ");
-    lcd.print(channelDelays[channel]);
+    lcd.print(delayValue);
     lcd.print(" ns");
-    
-    // Wait for 2 seconds before showing the next channel
-    delay(2000);
   }
 }
 
-// Function to send the delay value to the DS1023 for a specific channel
+// Function to set the delay for a specific channel
 void setChannelDelay(int channel, int delayValue) {
-  // Calculate the corresponding value to send (delayValue / stepSize)
-  int valueToSend = delayValue / 2; // Assuming 2 ns step size
+  int valueToSend = delayValue / 2;  // Assuming 2 ns step size
 
-  // Set LE high to start communication
+  // Start communication with DS1023
   digitalWrite(LE_PIN, HIGH);
-
-  // Clock out the 8-bit delay value (MSB first) for the specified channel
   for (int i = 7; i >= 0; i--) {
-    // Write the data bit (MSB first)
     digitalWrite(DATA_PIN, (valueToSend >> i) & 0x01);
-
-    // Clock the data into the chip
     digitalWrite(CLK_PIN, HIGH);
-    delayMicroseconds(1); // Small delay for clock pulse
+    delayMicroseconds(1);
     digitalWrite(CLK_PIN, LOW);
   }
   digitalWrite(DATA_PIN, LOW);
-
-  // Set LE low to latch the value
   digitalWrite(LE_PIN, LOW);
-
-  // Debug output
-  Serial.print("Channel ");
-  Serial.print(channel);
-  Serial.print(" - Fixed Delay set to: ");
-  Serial.print(delayValue);
-  Serial.println(" ns");
-
-  // Display the delay on the LCD for debugging
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Channel ");
-  lcd.print(channel);
-  lcd.setCursor(0, 1);
-  lcd.print("Delay: ");
-  lcd.print(delayValue);
-  lcd.print(" ns");
 }
+
