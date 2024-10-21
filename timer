@@ -1,0 +1,130 @@
+#include <LiquidCrystal.h>
+
+// Define pins for the DS1023
+#define DATA_PIN 51  // MOSI pin on Arduino Mega
+#define CLK_PIN  52  // SCK pin on Arduino Mega
+#define LE_PIN   53  // Pin to control LE (latch enable)
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+// LCD pin connections (RS, EN, D4, D5, D6, D7)
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+// Frequency of the pulse in MHz (e.g., 1 MHz)
+#define PULSE_FREQUENCY 1 // Change this value to your desired frequency in MHz
+
+// Set initial delays for the 8 channels
+int channelDelays[8] = {50, 50, 50, 50, 50, 50, 50, 50};  // Default 50 ns for each channel
+
+void setup() {
+  // Set up LCD
+  lcd.begin(16, 2);
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
+
+  // Set LED pin as output
+  pinMode(LED_PIN, OUTPUT);
+
+  // Setup pin 10 for Timer1 output (connected to DS1023 Pin 1)
+  pinMode(10, OUTPUT);
+
+  // Disable interrupts while setting up Timer1
+  noInterrupts();
+
+  // Configure Timer1 for Fast PWM mode to generate pulses on pin 10
+  TCCR1A = _BV(COM1B1) | _BV(WGM11);  // Clear OC1B on compare match, Fast PWM mode (mode 14)
+  TCCR1B = _BV(WGM13) | _BV(WGM12) | _BV(CS10);  // Fast PWM mode, no prescaler
+
+  // Set the compare value for the desired frequency
+  // Pulse Frequency in Hz = 16MHz / (2 * (ICR1 + 1))
+  ICR1 = (16000000 / (2 * PULSE_FREQUENCY * 1000000)) - 1;  // Frequency for Timer1
+  OCR1B = ICR1 / 2;  // 50% duty cycle
+
+  // Enable Timer1 interrupts
+  interrupts();
+
+  // Setup serial communication for debugging
+  Serial.begin(9600);
+
+  // Initialize pins for DS1023
+  pinMode(DATA_PIN, OUTPUT);
+  pinMode(CLK_PIN, OUTPUT);
+  pinMode(LE_PIN, OUTPUT);
+
+  // Reset the DS1023 to a known state
+  digitalWrite(LE_PIN, LOW);  // Latch is disabled initially
+
+  // Clear LCD and print ready message
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Channels Ready");
+
+  // Set the delay for all 8 channels
+  for (int channel = 0; channel < 8; channel++) {
+    setChannelDelay(channel, channelDelays[channel]);
+  }
+}
+
+void loop() {
+  // Blink the LED to show the loop is running
+  digitalWrite(LED_PIN, HIGH);  // Turn the LED on
+  delay(500);  // Wait for 500 milliseconds
+  digitalWrite(LED_PIN, LOW);   // Turn the LED off
+  delay(500);  // Wait for 500 milliseconds
+
+  // Display each channel's delay on the LCD
+  for (int channel = 0; channel < 8; channel++) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Channel ");
+    lcd.print(channel);
+    
+    lcd.setCursor(0, 1);
+    lcd.print("Delay: ");
+    lcd.print(channelDelays[channel]);
+    lcd.print(" ns");
+    
+    // Wait for 2 seconds before showing the next channel
+    delay(2000);
+  }
+}
+
+// Function to send the delay value to the DS1023 for a specific channel
+void setChannelDelay(int channel, int delayValue) {
+  // Calculate the corresponding value to send (delayValue / stepSize)
+  int valueToSend = delayValue / 2; // Assuming 2 ns step size
+
+  // Set LE high to start communication
+  digitalWrite(LE_PIN, HIGH);
+
+  // Clock out the 8-bit delay value (MSB first) for the specified channel
+  for (int i = 7; i >= 0; i--) {
+    // Write the data bit (MSB first)
+    digitalWrite(DATA_PIN, (valueToSend >> i) & 0x01);
+
+    // Clock the data into the chip
+    digitalWrite(CLK_PIN, HIGH);
+    delayMicroseconds(1); // Small delay for clock pulse
+    digitalWrite(CLK_PIN, LOW);
+  }
+  digitalWrite(DATA_PIN, LOW);
+
+  // Set LE low to latch the value
+  digitalWrite(LE_PIN, LOW);
+
+  // Debug output
+  Serial.print("Channel ");
+  Serial.print(channel);
+  Serial.print(" - Fixed Delay set to: ");
+  Serial.print(delayValue);
+  Serial.println(" ns");
+
+  // Display the delay on the LCD for debugging
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Channel ");
+  lcd.print(channel);
+  lcd.setCursor(0, 1);
+  lcd.print("Delay: ");
+  lcd.print(delayValue);
+  lcd.print(" ns");
+}
