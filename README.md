@@ -1,0 +1,1 @@
+Welcome to the Delay Board project! This innovative delay board is designed to assign individual delays to respective channels, enabling precise control over timing in various applications. Controlled via Arduino and a Python script, this modern board features Wi-Fi and Bluetooth connectivity, making it ideal for remote monitoring and management.
