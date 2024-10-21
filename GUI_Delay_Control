@@ -1,0 +1,121 @@
+pip install pyserial
+
+import tkinter as tk
+from tkinter import ttk
+import serial
+import time
+
+# Connect to Arduino
+ser = serial.Serial('COM3', 9600, timeout=1)  # Change 'COM3' to your Arduino's serial port
+time.sleep(2)  # Give time for the connection to establish
+
+# Function to send delay values for each channel
+def send_delay(channel, delay):
+    message = f"{channel}:{delay}\n"
+    ser.write(message.encode())
+    print(f"Sent: {message}")
+
+# Create the main window
+root = tk.Tk()
+root.title("Channel Delay Control")
+
+# Create sliders for each channel (0-7)
+sliders = []
+for i in range(8):
+    frame = ttk.Frame(root)
+    frame.pack(pady=10)
+
+    label = ttk.Label(frame, text=f"Channel {i} Delay (ns):")
+    label.pack(side=tk.LEFT)
+
+    slider = ttk.Scale(frame, from_=0, to=250, orient=tk.HORIZONTAL, length=200)
+    slider.set(50)  # Default value
+    slider.pack(side=tk.LEFT, padx=10)
+
+    # Update delay value when the slider is changed
+    slider.bind("<Motion>", lambda e, ch=i, sl=slider: send_delay(ch, int(sl.get())))
+
+    sliders.append(slider)
+
+# Start the Tkinter event loop
+root.mainloop()
+
+# Close the serial connection when GUI closes
+ser.close()
+
+#Arduino code modification 
+
+#include <LiquidCrystal.h>
+
+// Define pins for the DS1023
+#define DATA_PIN 51  // MOSI pin on Arduino Mega
+#define CLK_PIN  52  // SCK pin on Arduino Mega
+#define LE_PIN   53  // Pin to control LE (latch enable)
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+// LCD pin connections (RS, EN, D4, D5, D6, D7)
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+// Frequency of the pulse in MHz (e.g., 1 MHz)
+#define PULSE_FREQUENCY 1 // Change this value to your desired frequency in MHz
+
+// Set initial delays for the 8 channels
+int channelDelays[8] = {50, 50, 50, 50, 50, 50, 50, 50};  // Default 50 ns for each channel
+
+void setup() {
+  // Set up LCD
+  lcd.begin(16, 2);
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
+
+  // Set LED pin as output
+  pinMode(LED_PIN, OUTPUT);
+
+  // Setup serial communication
+  Serial.begin(9600);
+  
+  // Set initial delay for each channel
+  for (int channel = 0; channel < 8; channel++) {
+    setChannelDelay(channel, channelDelays[channel]);
+  }
+}
+
+void loop() {
+  // Check for incoming serial data
+  if (Serial.available() > 0) {
+    String input = Serial.readStringUntil('\n');
+    int sepIndex = input.indexOf(':');
+    int channel = input.substring(0, sepIndex).toInt();
+    int delayValue = input.substring(sepIndex + 1).toInt();
+
+    // Update the delay for the selected channel
+    channelDelays[channel] = delayValue;
+    setChannelDelay(channel, delayValue);
+    
+    // Display the updated delay on the LCD
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Channel ");
+    lcd.print(channel);
+    lcd.setCursor(0, 1);
+    lcd.print("Delay: ");
+    lcd.print(delayValue);
+    lcd.print(" ns");
+  }
+}
+
+// Function to set the delay for a specific channel
+void setChannelDelay(int channel, int delayValue) {
+  int valueToSend = delayValue / 2;  // Assuming 2 ns step size
+
+  // Start communication with DS1023
+  digitalWrite(LE_PIN, HIGH);
+  for (int i = 7; i >= 0; i--) {
+    digitalWrite(DATA_PIN, (valueToSend >> i) & 0x01);
+    digitalWrite(CLK_PIN, HIGH);
+    delayMicroseconds(1);
+    digitalWrite(CLK_PIN, LOW);
+  }
+  digitalWrite(DATA_PIN, LOW);
+  digitalWrite(LE_PIN, LOW);
+}
