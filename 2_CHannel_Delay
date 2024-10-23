@@ -1,0 +1,134 @@
+#include <LiquidCrystal.h>
+
+// Define pins for the first DS1023
+#define DATA_PIN1 51  // MOSI pin on Arduino Mega for Chip 1
+#define CLK_PIN1  52  // SCK pin on Arduino Mega for Chip 1
+#define LE_PIN1   53  // Latch enable pin for Chip 1
+
+// Define pins for the second DS1023
+#define DATA_PIN2 49  // MOSI pin on Arduino Mega for Chip 2
+#define CLK_PIN2  50  // SCK pin on Arduino Mega for Chip 2
+#define LE_PIN2   48  // Latch enable pin for Chip 2
+
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+// LCD pin connections (RS, EN, D4, D5, D6, D7)
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+// Frequency of the pulse in MHz (e.g., 1 MHz)
+#define PULSE_FREQUENCY 1 // Change this value to your desired frequency in MHz
+
+
+// Set initial delays for each chip
+int delayChip1 = 50;  // Default delay for Chip 1
+int delayChip2 = 100;  // Default delay for Chip 2
+
+void setup() {
+  // Set up LCD
+  lcd.begin(16, 2);
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
+
+  // Set LED pin as output
+  pinMode(LED_PIN, OUTPUT);
+
+  // Disable interrupts
+  noInterrupts();
+
+  // Set pin 10 as output (connected to Timer1)
+
+  pinMode(10, OUTPUT);  // Keep Pin 10 for Timer1
+
+    // Disable interrupts
+
+  noInterrupts();
+
+
+
+  // Configure Timer1 for Fast PWM mode
+
+  TCCR2A = _BV(COM2A0);  // Toggle OC1A on Compare Match
+
+  TCCR2B = _BV(WGM22) | _BV(CS20);  // CTC mode, no prescaler
+
+
+
+  // Set the compare value for the desired frequency
+
+  OCR2A = (16000000 / (2 * PULSE_FREQUENCY * 1000000)) - 1;
+
+
+
+  // Enable Timer1
+
+  interrupts();
+
+  // Enable interrupts
+  interrupts();
+
+  // Setup serial communication
+  Serial.begin(9600);
+
+  // Set initial delays for both chips
+  setDelay(1, delayChip1);
+  setDelay(2, delayChip2);
+}
+
+void loop() {
+  // Check for incoming serial data
+  if (Serial.available() > 0) {
+    String input = Serial.readStringUntil('\n');
+    int sepIndex = input.indexOf(':');
+    int chip = input.substring(0, sepIndex).toInt();  // Chip number
+    int delayValue = input.substring(sepIndex + 1).toInt();  // New delay value
+
+    // Update the delay for the selected chip
+    if (chip == 1) {
+      delayChip1 = delayValue;
+      setDelay(1, delayValue);
+    } else if (chip == 2) {
+      delayChip2 = delayValue;
+      setDelay(2, delayValue);
+    }
+
+    // Display the updated delay on the LCD
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Chip: ");
+    lcd.print(chip);
+    lcd.setCursor(0, 1);
+    lcd.print("Delay: ");
+    lcd.print(delayValue);
+    lcd.print(" ns");
+  }
+}
+
+// Function to set the delay for a specific chip
+void setDelay(int chip, int delayValue) {
+  int valueToSend = delayValue;  // Assuming 2 ns step size
+
+  if (chip == 1) {
+    // Start communication with DS1023 Chip 1
+    digitalWrite(LE_PIN1, HIGH);
+    for (int i = 7; i >= 0; i--) {
+      digitalWrite(DATA_PIN1, (valueToSend >> i) & 0x01);
+      digitalWrite(CLK_PIN1, HIGH);
+      delayMicroseconds(1);
+      digitalWrite(CLK_PIN1, LOW);
+    }
+    digitalWrite(DATA_PIN1, LOW);
+    digitalWrite(LE_PIN1, LOW);
+  } else if (chip == 2) {
+    // Start communication with DS1023 Chip 2
+    digitalWrite(LE_PIN2, HIGH);
+    for (int i = 7; i >= 0; i--) {
+      digitalWrite(DATA_PIN2, (valueToSend >> i) & 0x01);
+      digitalWrite(CLK_PIN2, HIGH);
+      delayMicroseconds(1);
+      digitalWrite(CLK_PIN2, LOW);
+    }
+    digitalWrite(DATA_PIN2, LOW);
+    digitalWrite(LE_PIN2, LOW);
+  }
+}
+
