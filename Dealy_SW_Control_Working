@@ -1,0 +1,134 @@
+#include <LiquidCrystal.h>
+
+// Define pins for the DS1023
+#define DATA_PIN 51  // MOSI pin on Arduino Mega
+#define CLK_PIN  52  // SCK pin on Arduino Mega
+#define LE_PIN   53  // Pin to control LE (latch enable)
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+#define PULSE_PIN 10  // Pin for pulse output
+
+// LCD pin connections (RS, EN, D4, D5, D6, D7)
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+// Frequency of the pulse in MHz (e.g., 1 MHz)
+#define PULSE_FREQUENCY 1 // Change this value to your desired frequency in MHz
+
+// Set the initial delay value in nanoseconds
+int delayValue = 75; // Initial delay (in nanoseconds)
+
+// Button pin definitions
+const int buttonUpPin = 6;   // Button to increase delay
+const int buttonDownPin = 7; // Button to decrease delay
+
+void setup() {
+  // Set up LCD columns and rows
+  lcd.begin(16, 2);  // 16 characters and 2 rows
+
+  // Display initial message
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
+
+  // Set LED and pulse pin as output
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(PULSE_PIN, OUTPUT);
+
+  // Set button pin modes
+  pinMode(buttonUpPin, INPUT_PULLUP);
+  pinMode(buttonDownPin, INPUT_PULLUP);
+  
+  // Initialize pins for DS1023
+  pinMode(DATA_PIN, OUTPUT);
+  pinMode(CLK_PIN, OUTPUT);
+  pinMode(LE_PIN, OUTPUT);
+
+  // Reset the DS1023 to a known state
+  digitalWrite(LE_PIN, LOW);  // Latch is disabled initially
+
+  // Clear LCD and print ready message
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Delay Set!");
+  updateDisplay();
+}
+
+void loop() {
+  // Check button states
+  if (digitalRead(buttonUpPin) == LOW) {
+    delayValue = min(delayValue + 10, 250); // Increase delay, max 250 ns
+    setFixedDelay(delayValue);
+    updateDisplay();
+    delay(100); // Debounce delay
+  }
+  
+  if (digitalRead(buttonDownPin) == LOW) {
+    delayValue = max(delayValue - 10, 0); // Decrease delay, min 0 ns
+    setFixedDelay(delayValue);
+    updateDisplay();
+    delay(100); // Debounce delay
+  }
+
+  // Generate pulse on pin 10
+  generatePulse(delayValue);
+
+  // Blink LED to show the loop is running
+  digitalWrite(LED_PIN, HIGH);
+  delay(500);
+  digitalWrite(LED_PIN, LOW);
+  delay(500);
+}
+
+// Function to send the delay value to the DS1023
+void setFixedDelay(int delayValue) {
+  // Calculate the corresponding value to send (delayValue / stepSize)
+  int valueToSend = delayValue / 2; // Assuming 2 ns step size
+
+  // Set LE high to start communication
+  digitalWrite(LE_PIN, HIGH);
+
+  // Clock out the 8-bit delay value (MSB first)
+  for (int i = 7; i >= 0; i--) {
+    // Write the data bit (MSB first)
+    digitalWrite(DATA_PIN, (valueToSend >> i) & 0x01);
+
+    // Clock the data into the chip
+    digitalWrite(CLK_PIN, HIGH);
+    delayMicroseconds(1); // Small delay for clock pulse
+    digitalWrite(CLK_PIN, LOW);
+  }
+  digitalWrite(DATA_PIN, LOW);
+
+  // Set LE low to latch the value
+  digitalWrite(LE_PIN, LOW);
+
+  // Debug output
+  Serial.print("Fixed Delay set to: ");
+  Serial.print(delayValue);
+  Serial.println(" ns");
+
+  // Display the delay on the LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Delay:");
+  lcd.setCursor(0, 1);
+  lcd.print(delayValue);
+  lcd.print(" ns");
+}
+
+// Function to update the display
+void updateDisplay() {
+  lcd.setCursor(0, 1);
+  lcd.print("Delay: ");
+  lcd.print(delayValue);
+  lcd.print(" ns    "); // Clear any previous characters
+}
+
+// Function to generate pulse on pin 10
+void generatePulse(int delayValue) {
+  // Generate a pulse with a width defined by the delay value
+  if (delayValue > 0) {
+    digitalWrite(PULSE_PIN, HIGH);
+    delayMicroseconds(delayValue); // Delay in microseconds
+    digitalWrite(PULSE_PIN, LOW);
+    delayMicroseconds(delayValue); // Delay in microseconds for the low phase
+  }
+}
