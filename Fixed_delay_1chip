@@ -1,0 +1,82 @@
+#include <LiquidCrystal.h>
+
+// Define pins for the DS1023
+#define DATA_PIN 51  // MOSI pin on Arduino Mega
+#define CLK_PIN  52  // SCK pin on Arduino Mega
+#define LE_PIN   53  // Pin to control LE (latch enable)
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+#define PULSE_PIN 10  // Pin for pulse output
+
+// LCD pin connections (RS, EN, D4, D5, D6, D7)
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+// Frequency of the pulse in MHz (e.g., 1 MHz)
+#define PULSE_FREQUENCY 1 // Change this value to your desired frequency in MHz
+
+// Set initial delay value
+int fixedDelay = 50; // Change this value to set the fixed delay (in nanoseconds)
+
+void setup() {
+  lcd.begin(16, 2);
+  lcd.print("Initializing...");
+
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(PULSE_PIN, OUTPUT);
+  Serial.begin(9600);
+  
+  // Initialize pins for DS1023
+  pinMode(DATA_PIN, OUTPUT);
+  pinMode(CLK_PIN, OUTPUT);
+  pinMode(LE_PIN, OUTPUT);
+  digitalWrite(LE_PIN, LOW);
+
+  // Configure Timer2 for Fast PWM mode
+  noInterrupts();
+  TCCR2A = _BV(COM2A0) | _BV(WGM21); // Toggle OC2A on Compare Match
+  TCCR2B = _BV(WGM22) | _BV(CS20);    // CTC mode, no prescaler
+  
+  // Set the compare value for the desired frequency
+  OCR2A = (16000000 / (2 * PULSE_FREQUENCY * 1000000)) - 1;
+
+  interrupts();
+
+  lcd.clear();
+  lcd.print("Delay Set!");
+  setFixedDelay(fixedDelay);
+}
+
+void loop() {
+  // Blink the LED to show the loop is running
+  digitalWrite(LED_PIN, HIGH);
+  delay(500);
+  digitalWrite(LED_PIN, LOW);
+  delay(500);
+  
+  // Check for serial input
+  if (Serial.available() > 0) {
+    fixedDelay = Serial.parseInt(); // Read delay value from serial
+    setFixedDelay(fixedDelay);
+  }
+}
+
+// Function to send the fixed delay value to the DS1023
+void setFixedDelay(int delayValue) {
+  int valueToSend = delayValue / 2; // Assuming 2 ns step size
+
+  digitalWrite(LE_PIN, HIGH);
+  for (int i = 7; i >= 0; i--) {
+    digitalWrite(DATA_PIN, (valueToSend >> i) & 0x01);
+    digitalWrite(CLK_PIN, HIGH);
+    delayMicroseconds(1); // Small delay for clock pulse
+    digitalWrite(CLK_PIN, LOW);
+  }
+  digitalWrite(LE_PIN, LOW);
+
+  // Display the delay on the LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Delay:");
+  lcd.setCursor(0, 1);
+  lcd.print(delayValue);
+  lcd.print(" ns");
+}
