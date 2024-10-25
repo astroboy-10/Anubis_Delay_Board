@@ -132,3 +132,4 @@ void generatePulse(int delayValue) {
     delayMicroseconds(delayValue); // Delay in microseconds for the low phase
   }
 }
+
