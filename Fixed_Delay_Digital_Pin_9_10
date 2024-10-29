@@ -1,0 +1,18 @@
+const int pulsePin1 = 9;  // Pin for the first pulse output
+const int pulsePin2 = 10; // Pin for the second pulse output
+
+void setup() {
+  pinMode(pulsePin1, OUTPUT);
+  pinMode(pulsePin2, OUTPUT);
+}
+
+void loop() {
+  // Generate  MHz pulse on both pins
+  digitalWrite(pulsePin1, HIGH);
+  digitalWrite(pulsePin2, HIGH);
+  delayMicroseconds(5000); // Keep HIGH for 5000 microseconds
+
+  digitalWrite(pulsePin1, LOW);
+  digitalWrite(pulsePin2, LOW);
+  delayMicroseconds(5000); // Keep LOW for 5000 microseconds
+}
