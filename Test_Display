@@ -1,0 +1,54 @@
+#include <Adafruit_GFX.h>
+#include <UTFTGLUE.h> // Ensure this is compatible with your display
+
+// Initialize the display
+UTFTGLUE myGLCD(0x0154, A2, A1, A3, A4, A0);
+
+// Declare font
+#if !defined(SmallFont)
+extern uint8_t SmallFont[]; // Ensure this font is included
+#endif
+
+// Timing variables
+unsigned long previousMillis = 0; // Store the last time delay was updated
+const long interval = 1000; // Update interval for delay display in milliseconds
+
+void setup() {
+    randomSeed(analogRead(5)); // Initialize random seed
+    pinMode(A0, OUTPUT); // Set A0 for controlling the display
+    digitalWrite(A0, HIGH);
+
+    // Setup the LCD
+    myGLCD.InitLCD();
+    myGLCD.setFont(SmallFont);
+}
+
+void loop() {
+    unsigned long currentMillis = millis(); // Get current time
+    if (currentMillis - previousMillis >= interval) {
+        previousMillis = currentMillis; // Update last time display was updated
+
+        // Clear the screen
+        myGLCD.clrScr();
+
+        // Draw the main screen elements
+        myGLCD.setColor(255, 0, 0);
+        myGLCD.fillRect(0, 0, 319, 13);
+        myGLCD.setColor(64, 64, 64);
+        myGLCD.fillRect(0, 226, 319, 239);
+        myGLCD.setColor(255, 255, 255);
+        myGLCD.setBackColor(255, 0, 0);
+        myGLCD.print("* Universal Color TFT Display Library *", CENTER, 1);
+        myGLCD.setBackColor(64, 64, 64);
+        myGLCD.setColor(255, 255, 0);
+        myGLCD.print("<http://electronics.henningkarlsen.com>", CENTER, 227);
+        
+        // Display the runtime
+        myGLCD.setColor(0, 255, 0);
+        myGLCD.setBackColor(0, 0, 0);
+        myGLCD.print("Runtime: ", CENTER, 100);
+        myGLCD.printNumI(currentMillis / 1000, CENTER, 120); // Display runtime in seconds
+    }
+
+    // Additional drawing or logic can go here, if needed
+}
