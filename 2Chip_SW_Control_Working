@@ -1,0 +1,177 @@
+#include <LiquidCrystal.h>
+
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+// Define pins for the first DS1023
+#define DATA_PIN_1 51  // MOSI pin on Arduino Mega for Chip 1
+#define CLK_PIN_1  52  // SCK pin on Arduino Mega for Chip 1
+#define LE_PIN_1   53  // Pin to control LE (latch enable) for Chip 1
+const int PULSE_PIN_1 = 10;   // Pin for pulse output for Chip 1
+
+// Define pins for the second DS1023
+#define DATA_PIN_2 49  // MOSI pin on Arduino Mega for Chip 2
+#define CLK_PIN_2  48  // SCK pin on Arduino Mega for Chip 2
+#define LE_PIN_2   50  // Pin to control LE (latch enable) for Chip 2
+const int PULSE_PIN_2 = 9; // Pin for pulse output for Chip 2
+
+// LCD pin connections (RS, EN, D4, D5, D6, D7)
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+int delayValue1 = 10; // Initial delay for Chip 1
+int delayValue2 = 10; // Initial delay for Chip 2
+
+// Button pin definitions
+const int buttonUpPin = 6;   // Button to increase delay
+const int buttonDownPin = 7; // Button to decrease delay
+const int switchPin = 8;      // Switch to toggle between chips
+
+bool selectChip1 = true; // Start with Chip 1 selected
+bool selectChip2 = true;
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// Function to send the delay value to the DS1023
+void setFixedDelay(int delayValue) {
+  // Calculate the corresponding value to send (delayValue / stepSize)
+  int valueToSend = delayValue / 2; // Assuming 2 ns step size
+
+  // Set LE high to start communication
+  digitalWrite(LE_PIN_1, HIGH);
+  digitalWrite(LE_PIN_2, HIGH);
+
+  // Clock out the 8-bit delay value (MSB first)
+  for (int i = 7; i >= 0; i--) {
+    // Write the data bit (MSB first)
+    digitalWrite(DATA_PIN_1, (valueToSend >> i) & 0x01);
+    digitalWrite(DATA_PIN_2, (valueToSend >> i) & 0x01);
+
+    // Clock the data into the chip
+    digitalWrite(CLK_PIN_1, HIGH);
+    digitalWrite(CLK_PIN_2, HIGH);
+    delayMicroseconds(1); // Small delay for clock pulse
+    digitalWrite(CLK_PIN_1, LOW);
+    digitalWrite(CLK_PIN_2, LOW);
+  }
+  digitalWrite(DATA_PIN_1, LOW);
+  digitalWrite(DATA_PIN_2, LOW);
+
+  // Set LE low to latch the value
+  digitalWrite(LE_PIN_1, LOW);
+  digitalWrite(LE_PIN_2, LOW);
+
+  // Debug output
+  Serial.print("Fixed Delay set to: ");
+  Serial.print(delayValue);
+  Serial.println(" ns");
+}
+
+// Function to update the display
+void updateDisplay() {
+  lcd.setCursor(0, 1);
+  if (selectChip1) {
+    lcd.print("Chip 1 Delay: ");
+    lcd.print(delayValue1);
+  } else {
+    lcd.print("Chip 2 Delay: ");
+    lcd.print(delayValue2);
+  }
+  lcd.print(" ns    "); // Clear any previous characters
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void setup() {
+  lcd.begin(16, 2);
+  lcd.print("Initializing...");
+
+  pinMode(LED_PIN, OUTPUT);
+  
+  pinMode(PULSE_PIN_1, OUTPUT);
+  pinMode(PULSE_PIN_2, OUTPUT);
+
+  pinMode(buttonUpPin, INPUT_PULLUP);
+  pinMode(buttonDownPin, INPUT_PULLUP);
+  pinMode(switchPin, INPUT_PULLUP); // Switch to toggle chips
+
+  Serial.begin(9600); // Start serial communication for debugging
+
+  // Initialize pins for DS1023 Chip 1
+  pinMode(DATA_PIN_1, OUTPUT);
+  pinMode(CLK_PIN_1, OUTPUT);
+  pinMode(LE_PIN_1, OUTPUT);
+
+  // Initialize pins for DS1023 Chip 2
+  pinMode(DATA_PIN_2, OUTPUT);
+  pinMode(CLK_PIN_2, OUTPUT);
+  pinMode(LE_PIN_2, OUTPUT);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Delay Set!");
+  updateDisplay(); // Display initial delay values
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+void loop() {
+  // Toggle chip selection
+  selectChip1 = digitalRead(switchPin) == HIGH;
+
+  // Check which chip is selected
+  if (selectChip1) {
+    Serial.print("Chip 1 selected with delay: ");
+    Serial.println(delayValue1);
+  } else {
+    Serial.print("Chip 2 selected with delay: ");
+    Serial.println(delayValue2);
+  }
+
+  // Check button states
+  if (digitalRead(buttonUpPin) == LOW) {
+    if (selectChip1) {
+      delayValue1 = min(delayValue1 + 10, 250);
+      setFixedDelay(delayValue1); // Set the new delay value
+    } else {
+      delayValue2 = min(delayValue2 + 10, 250);
+      setFixedDelay(delayValue2); // Set the new delay value
+    }
+    updateDisplay(); // Update display after changing delay
+    delay(100); // Debounce delay
+  }
+  
+  if (digitalRead(buttonDownPin) == LOW) {
+    if (selectChip1) {
+      delayValue1 = max(delayValue1 - 10, 0);
+      setFixedDelay(delayValue1); // Set the new delay value
+    } else {
+      delayValue2 = max(delayValue2 - 10, 0);
+      setFixedDelay(delayValue2); // Set the new delay value
+    }
+    updateDisplay(); // Update display after changing delay
+    delay(100); // Debounce delay
+  }
+
+  // Generate pulse on both pins
+  digitalWrite(PULSE_PIN_1, HIGH);
+  digitalWrite(PULSE_PIN_2, HIGH);
+  delayMicroseconds(500); // Keep HIGH for 500 microseconds
+  digitalWrite(PULSE_PIN_1, LOW);
+  digitalWrite(PULSE_PIN_2, LOW);
+  delayMicroseconds(500); // Keep LOW for 500 microseconds
+
+  // Blink LED to show the loop is running
+  digitalWrite(LED_PIN, HIGH);
+  delay(500);
+  digitalWrite(LED_PIN, LOW);
+  delay(500);
+}
+
