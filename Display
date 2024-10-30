@@ -1,0 +1,155 @@
+#include <MCUFRIEND_kbv.h>
+#include <TouchScreen.h>
+
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+// Define pins for the first DS1023
+#define DATA_PIN_1 51  // MOSI pin on Arduino Mega for Chip 1
+#define CLK_PIN_1  52  // SCK pin on Arduino Mega for Chip 1
+#define LE_PIN_1   53  // Pin to control LE (latch enable) for Chip 1
+const int PULSE_PIN_1 = 25;   // Pin for pulse output for Chip 1
+
+// Define pins for the second DS1023
+#define DATA_PIN_2 49  // MOSI pin on Arduino Mega for Chip 2
+#define CLK_PIN_2  48  // SCK pin on Arduino Mega for Chip 2
+#define LE_PIN_2   50  // Pin to control LE (latch enable) for Chip 2
+const int PULSE_PIN_2 = 26; // Pin for pulse output for Chip 2
+
+// Define touchscreen pins
+#define XP A1 // Touchscreen X+
+#define YP A2 // Touchscreen Y+
+#define XM A3 // Touchscreen X-
+#define YM A4 // Touchscreen Y-
+#define MINPRESSURE 10
+#define MAXPRESSURE 1000
+
+// Color definitions
+#define BLACK 0x0000
+#define WHITE 0xFFFF
+#define RED 0xF800
+#define GREEN 0x07E0
+#define BLUE 0x001F
+#define GRAY 0x7BEF
+
+MCUFRIEND_kbv tft;
+TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
+
+int delayValue1 = 10; // Initial delay for Chip 1
+int delayValue2 = 10; // Initial delay for Chip 2
+
+// Slider positions
+int sliderX1 = 50;
+int sliderY1 = 150;
+int sliderWidth1 = 200;
+
+int sliderX2 = 50;
+int sliderY2 = 200;
+int sliderWidth2 = 200;
+
+// Function to send the delay value to the DS1023
+void setFixedDelay(int delayValue, int chip) {
+    int valueToSend = delayValue / 2; // Assuming 2 ns step size
+    digitalWrite(chip == 1 ? LE_PIN_1 : LE_PIN_2, HIGH);
+    for (int i = 7; i >= 0; i--) {
+        digitalWrite(chip == 1 ? DATA_PIN_1 : DATA_PIN_2, (valueToSend >> i) & 0x01);
+        digitalWrite(chip == 1 ? CLK_PIN_1 : CLK_PIN_2, HIGH);
+        delayMicroseconds(1);
+        digitalWrite(chip == 1 ? CLK_PIN_1 : CLK_PIN_2, LOW);
+    }
+    digitalWrite(chip == 1 ? LE_PIN_1 : LE_PIN_2, LOW);
+    Serial.print("Fixed Delay for Chip ");
+    Serial.print(chip);
+    Serial.print(" set to: ");
+    Serial.print(delayValue);
+    Serial.println(" ns");
+}
+
+void drawUI() {
+    tft.fillScreen(BLACK);
+    
+    // Draw sliders
+    tft.fillRect(sliderX1, sliderY1, sliderWidth1, 20, GRAY);
+    tft.fillRect(sliderX1 + (delayValue1 * (sliderWidth1 / 100)) - 5, sliderY1, 10, 20, RED);
+    tft.fillRect(sliderX2, sliderY2, sliderWidth2, 20, GRAY);
+    tft.fillRect(sliderX2 + (delayValue2 * (sliderWidth2 / 100)) - 5, sliderY2, 10, 20, RED);
+    
+    // Display current delay values
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.setCursor(50, 100);
+    tft.print("Chip 1 Delay: ");
+    tft.print(delayValue1);
+    tft.print(" ns");
+    tft.setCursor(50, 120);
+    tft.print("Chip 2 Delay: ");
+    tft.print(delayValue2);
+    tft.print(" ns");
+}
+
+void setup() {
+    Serial.begin(9600);
+    tft.begin();
+    tft.setRotation(1);
+    tft.fillScreen(BLACK);
+    drawUI();
+
+    pinMode(LED_PIN, OUTPUT);
+    pinMode(PULSE_PIN_1, OUTPUT);
+    pinMode(PULSE_PIN_2, OUTPUT);
+    
+    // Initialize pins for DS1023 Chip 1
+    pinMode(DATA_PIN_1, OUTPUT);
+    pinMode(CLK_PIN_1, OUTPUT);
+    pinMode(LE_PIN_1, OUTPUT);
+
+    // Initialize pins for DS1023 Chip 2
+    pinMode(DATA_PIN_2, OUTPUT);
+    pinMode(CLK_PIN_2, OUTPUT);
+    pinMode(LE_PIN_2, OUTPUT);
+}
+
+void loop() {
+    TSPoint p = ts.getPoint();
+    pinMode(XP, INPUT);
+    pinMode(XM, INPUT);
+    pinMode(YP, INPUT);
+    pinMode(YM, INPUT);
+
+    static int lastDelayValue1 = delayValue1;
+    static int lastDelayValue2 = delayValue2;
+
+    if (p.z > MINPRESSURE && p.z < MAXPRESSURE) {
+        // Check if the touch is on the first slider
+        if (p.x > sliderX1 && p.x < (sliderX1 + sliderWidth1) && p.y > sliderY1 && p.y < (sliderY1 + 20)) {
+            delayValue1 = map(p.x, sliderX1, sliderX1 + sliderWidth1, 0, 100);
+            if (delayValue1 != lastDelayValue1) { // Only update if changed
+                setFixedDelay(delayValue1, 1); // Update Chip 1
+                drawUI(); // Redraw the UI
+                lastDelayValue1 = delayValue1; // Update last value
+            }
+        }
+        // Check if the touch is on the second slider
+        if (p.x > sliderX2 && p.x < (sliderX2 + sliderWidth2) && p.y > sliderY2 && p.y < (sliderY2 + 20)) {
+            delayValue2 = map(p.x, sliderX2, sliderX2 + sliderWidth2, 0, 100);
+            if (delayValue2 != lastDelayValue2) { // Only update if changed
+                setFixedDelay(delayValue2, 2); // Update Chip 2
+                drawUI(); // Redraw the UI
+                lastDelayValue2 = delayValue2; // Update last value
+            }
+        }
+    }
+
+    // Generate pulse on both pins
+    digitalWrite(PULSE_PIN_1, HIGH);
+    digitalWrite(PULSE_PIN_2, HIGH);
+    delayMicroseconds(500); // Keep HIGH for 500 microseconds
+    digitalWrite(PULSE_PIN_1, LOW);
+    digitalWrite(PULSE_PIN_2, LOW);
+    delayMicroseconds(500); // Keep LOW for 500 microseconds
+
+    // Blink LED to show the loop is running
+    digitalWrite(LED_PIN, HIGH);
+    delay(500);
+    digitalWrite(LED_PIN, LOW);
+    delay(500);
+}
