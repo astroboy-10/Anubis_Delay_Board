@@ -1,0 +1,103 @@
+#include <MCUFRIEND_kbv.h>
+#include <TouchScreen.h>
+
+// Pin definitions for touchscreen
+#define YP A2  // Touch Y+
+#define YM 8   // Touch Y-
+#define XM A3  // Touch X-
+#define XP 9   // Touch X+
+
+TouchScreen myTouch(XP, YP, XM, YM, 300);
+TSPoint tp; // Touchscreen point
+
+// Create an instance of the TFT display
+MCUFRIEND_kbv tft;
+
+// Color definitions
+#define BLACK 0x0000
+#define WHITE 0xFFFF
+#define RED   0xF800
+#define GREEN 0x07E0
+
+// Rectangle position and size
+int rectX = 50;
+int rectY = 100;
+int rectWidth = 100;
+int rectHeight = 50;
+bool isDragging = false;
+int nh, nv;
+
+void setup() {
+    Serial.begin(9600);
+    tft.begin();
+    tft.setRotation(1);
+    tft.fillScreen(BLACK);
+    drawRectangle();
+}
+
+void loop() {
+    readTouch();
+  
+    if (isTouched()) {
+        Serial.print("Touch detected at: ");
+        Serial.print(tp.x);
+        Serial.print(", ");
+        Serial.println(tp.y);
+
+nh = map(tp.x, 90, 920, 320, 0);
+nv = map(tp.y, 100, 940, 240, 0);
+        Serial.print("nh: ");
+        Serial.print(nh);
+        Serial.print("nv: ");
+        Serial.println(nv);
+        
+        // Check if touch is within the rectangle
+        if (isTouchOnRectangle(rectX, rectY, rectWidth, rectHeight)) {
+            isDragging = true; // Start dragging
+            Serial.println("Rectangle touched!");
+        }
+        
+        // If dragging, move the rectangle
+        if (isDragging) {
+            rectX = nh - rectWidth / 2; // Center the rectangle on touch
+            rectY = nv - rectHeight / 2;
+            drawRectangle(); // Update rectangle position
+            Serial.print("Moving to: ");
+            Serial.print(rectX);
+            Serial.print(", ");
+            Serial.println(rectY);
+        }
+    } else {
+        // Stop dragging when the touch is released
+        if (isDragging) {
+            isDragging = false;
+            Serial.println("Dragging stopped.");
+            drawRectangle(); // Redraw rectangle in GREEN when dragging stops
+        }
+    }
+}
+
+void readTouch() {
+    tp = myTouch.getPoint();
+    pinMode(YP, OUTPUT); // Restore shared pins
+    pinMode(XM, OUTPUT);
+    digitalWrite(YP, HIGH);
+    digitalWrite(XM, HIGH);
+}
+
+bool isTouched() {
+    return (tp.z > 10 && tp.z < 1000); // Basic pressure check
+}
+
+bool isTouchOnRectangle(int x, int y, int width, int height) {
+    return (nh > x && nh < (x + width) && nv > y && nv < (y + height));
+}
+
+void drawRectangle() {
+    tft.fillScreen(BLACK); // Clear the screen
+    if (isDragging) {
+        tft.fillRect(rectX, rectY, rectWidth, rectHeight, GREEN); // Draw in GREEN if dragging
+    } else {
+        tft.fillRect(rectX, rectY, rectWidth, rectHeight, RED); // Draw in RED if not dragging
+    }
+}
