@@ -1,0 +1,193 @@
+#include <MCUFRIEND_kbv.h>
+#include <TouchScreen.h>
+
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+// Pin definitions for touchscreen
+#define YP A2  // Touch Y+
+#define YM 8   // Touch Y-
+#define XM A3  // Touch X-
+#define XP 9   // Touch X+
+
+TouchScreen myTouch(XP, YP, XM, YM, 300);
+TSPoint tp; // Touchscreen point
+
+// Create an instance of the TFT display
+MCUFRIEND_kbv tft;
+
+// Color definitions
+#define BLACK 0x0000
+#define WHITE 0xFFFF
+#define RED   0xF800
+#define GREEN 0x07E0
+
+// Slider positions and sizes
+int sliderX1 = 50;
+int sliderY1 = 100;
+int sliderWidth1 = 200;
+int sliderHeight = 20;
+
+int sliderX2 = 50;
+int sliderY2 = 150;
+int sliderWidth2 = 200;
+
+int delayValue1 = 50; // Initial delay for Chip 1
+int delayValue2 = 50; // Initial delay for Chip 2
+
+// Define pins for the first DS1023
+#define DATA_PIN_1 51  // MOSI pin on Arduino Mega for Chip 1
+#define CLK_PIN_1  52  // SCK pin on Arduino Mega for Chip 1
+#define LE_PIN_1   53  // Pin to control LE (latch enable) for Chip 1
+const int PULSE_PIN_1 = 25;   // Pin for pulse output for Chip 1
+
+// Define pins for the second DS1023
+#define DATA_PIN_2 49  // MOSI pin on Arduino Mega for Chip 2
+#define CLK_PIN_2  48  // SCK pin on Arduino Mega for Chip 2
+#define LE_PIN_2   50  // Pin to control LE (latch enable) for Chip 2
+const int PULSE_PIN_2 = 26; // Pin for pulse output for Chip 2
+
+int nh, nv;
+
+void setup() {
+    Serial.begin(9600);
+    tft.begin();
+    tft.setRotation(1);
+    tft.fillScreen(BLACK);
+    
+    // Initialize pins for DS1023 Chip 1
+    pinMode(DATA_PIN_1, OUTPUT);
+    pinMode(CLK_PIN_1, OUTPUT);
+    pinMode(LE_PIN_1, OUTPUT);
+    
+    // Initialize pins for DS1023 Chip 2
+    pinMode(DATA_PIN_2, OUTPUT);
+    pinMode(CLK_PIN_2, OUTPUT);
+    pinMode(LE_PIN_2, OUTPUT);
+
+    pinMode(PULSE_PIN_1, OUTPUT);
+    pinMode(PULSE_PIN_2, OUTPUT);
+    
+    drawSliders();
+}
+
+void loop() {
+    // Generate pulse for Chip 1
+    digitalWrite(PULSE_PIN_1, HIGH);
+    delayMicroseconds(0.5);
+    digitalWrite(PULSE_PIN_1, LOW);
+    delayMicroseconds(0.5);
+
+    // Generate pulse for Chip 2
+    digitalWrite(PULSE_PIN_2, HIGH);
+    delayMicroseconds(0.5);
+    digitalWrite(PULSE_PIN_2, LOW);
+    delayMicroseconds(0.5);
+
+    readTouch();
+
+    if (isTouched()) {
+        Serial.print("Touch detected at: ");
+        Serial.print(tp.x);
+        Serial.print(", ");
+        Serial.println(tp.y);
+
+        nh = map(tp.x, 83, 914, 0, 320); // Adjust for your screen resolution
+        nv = map(tp.y, 133, 965, 0, 240); // Adjust for your screen resolution
+        Serial.print("nh: ");
+        Serial.print(nh);
+        Serial.print(" nv: ");
+        Serial.println(nv);
+        
+        // Check if touch is within the range of sliders
+        if (isTouchOnSlider(sliderX1, sliderY1, sliderWidth1)) {
+            delayValue1 = map(nh, sliderX1, sliderX1 + sliderWidth1, 0, 250); // Adjust delay range
+            setFixedDelay(1, delayValue1); // Update Chip 1
+            drawSliders(); // Redraw sliders
+        } else if (isTouchOnSlider(sliderX2, sliderY2, sliderWidth2)) {
+            delayValue2 = map(nh, sliderX2, sliderX2 + sliderWidth2, 0, 250); // Adjust delay range
+            setFixedDelay(2, delayValue2); // Update Chip 2
+            drawSliders(); // Redraw sliders
+        }
+    }
+}
+
+void readTouch() {
+    tp = myTouch.getPoint();
+    pinMode(YP, OUTPUT); // Restore shared pins
+    pinMode(XM, OUTPUT);
+    digitalWrite(YP, HIGH);
+    digitalWrite(XM, HIGH);
+}
+
+bool isTouched() {
+    return (tp.z > 10 && tp.z < 1000); // Basic pressure check
+}
+
+bool isTouchOnSlider(int sliderX, int sliderY, int width) {
+    return (nh > sliderX && nh < (sliderX + width) && nv > sliderY && nv < (sliderY + sliderHeight));
+}
+
+void drawSliders() {
+    tft.fillScreen(BLACK); // Clear the screen
+    // Draw slider 1
+    tft.fillRect(sliderX1, sliderY1, sliderWidth1, sliderHeight, RED); // Draw in RED
+    int sliderPosition1 = sliderX1 + (delayValue1 * (sliderWidth1 / 250)); // Map value to slider position
+    tft.fillRect(sliderPosition1 - 5, sliderY1, 10, sliderHeight, GREEN); // Draw knob for slider 1
+    
+    // Draw slider 2
+    tft.fillRect(sliderX2, sliderY2, sliderWidth2, sliderHeight, RED); // Draw in RED
+    int sliderPosition2 = sliderX2 + (delayValue2 * (sliderWidth2 / 250)); // Map value to slider position
+    tft.fillRect(sliderPosition2 - 5, sliderY2, 10, sliderHeight, GREEN); // Draw knob for slider 2
+
+    // Display delay values for both chips
+    tft.setCursor(10, 10);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.print("Chip 1 Delay: ");
+    tft.print(delayValue1);
+    tft.print(" ns");
+
+    tft.setCursor(10, 40);
+    tft.print("Chip 2 Delay: ");
+    tft.print(delayValue2);
+    tft.print(" ns");
+}
+
+void setFixedDelay(int chip, int delayValue) {
+    // Calculate the corresponding value to send (delayValue / stepSize)
+    int valueToSend = delayValue / 2; // Assuming 2 ns step size
+
+    // Set LE high to start communication
+    digitalWrite(LE_PIN_1, HIGH);
+    digitalWrite(LE_PIN_2, HIGH);
+
+    // Clock out the 8-bit delay value (MSB first)
+    for (int i = 7; i >= 0; i--) {
+        // Write the data bit (MSB first)
+        if (chip == 1) {
+            digitalWrite(DATA_PIN_1, (valueToSend >> i) & 0x01);
+            digitalWrite(CLK_PIN_1, HIGH);
+            delayMicroseconds(1); // Small delay for clock pulse
+            digitalWrite(CLK_PIN_1, LOW);
+        } else {
+            digitalWrite(DATA_PIN_2, (valueToSend >> i) & 0x01);
+            digitalWrite(CLK_PIN_2, HIGH);
+            delayMicroseconds(1); // Small delay for clock pulse
+            digitalWrite(CLK_PIN_2, LOW);
+        }
+    }
+    digitalWrite(DATA_PIN_1, LOW);
+    digitalWrite(DATA_PIN_2, LOW);
+
+    // Set LE low to latch the value
+    digitalWrite(LE_PIN_1, LOW);
+    digitalWrite(LE_PIN_2, LOW);
+
+    // Debug output
+    Serial.print("Current Delay for Chip 1: ");
+    Serial.print(delayValue1);
+    Serial.println(" ns");
+    Serial.print("Current Delay for Chip 2: ");
+    Serial.print(delayValue2);
+    Serial.println(" ns");
+}
