@@ -1,0 +1,200 @@
+#include <MCUFRIEND_kbv.h>
+#include <TouchScreen.h>
+
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+// Pin definitions for touchscreen
+#define YP A2  // Touch Y+
+#define YM 8   // Touch Y-
+#define XM A3  // Touch X-
+#define XP 9   // Touch X+
+
+TouchScreen myTouch(XP, YP, XM, YM, 300);
+TSPoint tp; // Touchscreen point
+
+// Create an instance of the TFT display
+MCUFRIEND_kbv tft;
+
+// Color definitions
+#define BLACK 0x0000
+#define WHITE 0xFFFF
+#define RED   0xF800
+#define GREEN 0x07E0
+
+// Slider position and size (larger width for better visibility)
+int sliderX = 35;
+int sliderY = 100;
+int sliderWidth = 400;  // Wider slider
+int sliderHeight = 30;
+
+// Delay values for each chip
+int delayValue[8] = {50, 50, 50, 50, 50, 50, 50, 50}; // Initial delay for all 8 chips
+int currentChip = 0;  // Track which chip is currently selected (0 to 7)
+
+// Define shared pins for all DS1023 Chips
+#define DATA_PIN 51  // MOSI pin on Arduino Mega (same for all chips)
+#define CLK_PIN  52  // SCK pin on Arduino Mega (same for all chips)
+
+// Define separate LE_PIN for each chip
+#define LE_PIN_1   53  // Pin to control LE (latch enable) for Chip 1
+#define LE_PIN_2   50  // Pin to control LE (latch enable) for Chip 2
+#define LE_PIN_3   49  // Pin to control LE (latch enable) for Chip 3
+#define LE_PIN_4   48  // Pin to control LE (latch enable) for Chip 4
+#define LE_PIN_5   47  // Pin to control LE (latch enable) for Chip 5
+#define LE_PIN_6   46  // Pin to control LE (latch enable) for Chip 6
+#define LE_PIN_7   45  // Pin to control LE (latch enable) for Chip 7
+#define LE_PIN_8   44  // Pin to control LE (latch enable) for Chip 8
+
+const int PULSE_PIN_1 = 25;   // Pin for pulse output for Chip 1
+const int PULSE_PIN_2 = 26;   // Pin for pulse output for Chip 2
+const int PULSE_PIN_3 = 27;   // Pin for pulse output for Chip 3
+const int PULSE_PIN_4 = 28;   // Pin for pulse output for Chip 4
+const int PULSE_PIN_5 = 29;   // Pin for pulse output for Chip 5
+const int PULSE_PIN_6 = 30;   // Pin for pulse output for Chip 6
+const int PULSE_PIN_7 = 31;   // Pin for pulse output for Chip 7
+const int PULSE_PIN_8 = 32;   // Pin for pulse output for Chip 8
+
+int nh, nv;
+
+void setup() {
+    Serial.begin(9600);
+    tft.begin();
+    tft.setRotation(1);
+    tft.fillScreen(BLACK);
+
+    // Initialize shared pins for all DS1023 Chips
+    pinMode(DATA_PIN, OUTPUT);
+    pinMode(CLK_PIN, OUTPUT);
+
+    // Initialize separate LE pins for all DS1023 Chips
+    pinMode(LE_PIN_1, OUTPUT);
+    pinMode(LE_PIN_2, OUTPUT);
+    pinMode(LE_PIN_3, OUTPUT);
+    pinMode(LE_PIN_4, OUTPUT);
+    pinMode(LE_PIN_5, OUTPUT);
+    pinMode(LE_PIN_6, OUTPUT);
+    pinMode(LE_PIN_7, OUTPUT);
+    pinMode(LE_PIN_8, OUTPUT);
+
+    // Initialize pulse pins
+    pinMode(PULSE_PIN_1, OUTPUT);
+    pinMode(PULSE_PIN_2, OUTPUT);
+    pinMode(PULSE_PIN_3, OUTPUT);
+    pinMode(PULSE_PIN_4, OUTPUT);
+    pinMode(PULSE_PIN_5, OUTPUT);
+    pinMode(PULSE_PIN_6, OUTPUT);
+    pinMode(PULSE_PIN_7, OUTPUT);
+    pinMode(PULSE_PIN_8, OUTPUT);
+
+    drawScreen();
+}
+
+void loop() {
+    // Generate pulse for the selected chip
+    digitalWrite(PULSE_PIN_1 + currentChip, HIGH);
+    delayMicroseconds(0.1);
+    digitalWrite(PULSE_PIN_1 + currentChip, LOW);
+    delayMicroseconds(0.1);
+
+    readTouch();
+
+    if (isTouched()) {
+        // Detect touch
+        nh = map(tp.x, 100, 927, 320, 0); // Adjust for your screen resolution
+        nv = map(tp.y, 121, 900, 240, 0); // Adjust for your screen resolution
+        Serial.print("nh: ");
+        Serial.print(nh);
+        Serial.print(" nv: ");
+        Serial.println(nv);
+
+        // Check if touch is on the slider
+        if (nh > sliderX && nh < sliderX + sliderWidth && nv > sliderY && nv < sliderY + sliderHeight) {
+            delayValue[currentChip] = map(nh, sliderX, sliderX + sliderWidth, 0, 250); // Update delay
+            setFixedDelay(currentChip + 1, delayValue[currentChip]); // Update corresponding chip
+            drawScreen(); // Redraw screen
+        }
+
+        // Check if "Next" button is pressed (below slider)
+        if (nv > sliderY + sliderHeight && nv < sliderY + sliderHeight + 40) {
+            currentChip = (currentChip + 1) % 8; // Go to next chip, loop back to 1 after 8
+            drawScreen(); // Redraw screen with new chip's slider
+        }
+    }
+}
+
+void readTouch() {
+    tp = myTouch.getPoint();
+    pinMode(YP, OUTPUT); // Restore shared pins
+    pinMode(XM, OUTPUT);
+    digitalWrite(YP, HIGH);
+    digitalWrite(XM, HIGH);
+}
+
+bool isTouched() {
+    return (tp.z > 10 && tp.z < 1000); // Basic pressure check
+}
+
+void drawScreen() {
+    tft.fillScreen(BLACK); // Clear the screen
+
+    // Draw the slider for the current chip
+    tft.fillRect(sliderX, sliderY, sliderWidth, sliderHeight, RED); // Draw in RED
+    int sliderPosition = sliderX + delayValue[currentChip]; // Map value to slider position
+    tft.fillRect(sliderPosition - 5, sliderY, 30, sliderHeight, GREEN); // Draw knob for the slider
+
+    // Display the delay value for the current chip
+    tft.setCursor(10, 10);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.print("Chip ");
+    tft.print(currentChip + 1);
+    tft.print(" Delay: ");
+    tft.print(delayValue[currentChip]);
+    tft.print(" ns");
+
+    // Draw the "Next" button
+    tft.fillRect(sliderX, sliderY + sliderHeight + 10, sliderWidth, 40, GREEN);
+    tft.setCursor(sliderX + 150, sliderY + sliderHeight + 20);
+    tft.setTextColor(BLACK);
+    tft.setTextSize(2);
+    tft.print("Next");
+}
+
+void setFixedDelay(int chip, int delayValue) {
+    // Calculate the corresponding value to send (delayValue / stepSize)
+    int valueToSend = delayValue / 2; // Assuming 2 ns step size
+
+    int lePin;
+    switch(chip) {
+        case 1: lePin = LE_PIN_1; break;
+        case 2: lePin = LE_PIN_2; break;
+        case 3: lePin = LE_PIN_3; break;
+        case 4: lePin = LE_PIN_4; break;
+        case 5: lePin = LE_PIN_5; break;
+        case 6: lePin = LE_PIN_6; break;
+        case 7: lePin = LE_PIN_7; break;
+        case 8: lePin = LE_PIN_8; break;
+    }
+
+    // Set LE high to start communication
+    digitalWrite(lePin, HIGH);
+
+    // Clock out the 8-bit delay value (MSB first)
+    for (int i = 7; i >= 0; i--) {
+        // Write the data bit (MSB first)
+        digitalWrite(DATA_PIN, (valueToSend >> i) & 0x01);
+        digitalWrite(CLK_PIN, HIGH);
+        delayMicroseconds(1); // Small delay for clock pulse
+        digitalWrite(CLK_PIN, LOW);
+    }
+
+    // Set LE low to latch the value
+    digitalWrite(lePin, LOW);
+
+    // Debug output
+    Serial.print("Current Delay for Chip ");
+    Serial.print(chip);
+    Serial.print(": ");
+    Serial.print(delayValue);
+    Serial.println(" ns");
+}
