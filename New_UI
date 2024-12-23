@@ -1,0 +1,179 @@
+#include <MCUFRIEND_kbv.h>
+#include <TouchScreen.h>
+
+#define LED_PIN  13  // LED pin (Arduino Mega has built-in LED on pin 13)
+
+// Pin definitions for touchscreen
+#define YP A2  // Touch Y+
+#define YM 8   // Touch Y-
+#define XM A3  // Touch X-
+#define XP 9   // Touch X+
+
+TouchScreen myTouch(XP, YP, XM, YM, 300);
+TSPoint tp; // Touchscreen point
+
+// Create an instance of the TFT display
+MCUFRIEND_kbv tft;
+
+// Color definitions
+#define BLACK 0x0000
+#define WHITE 0xFFFF
+#define RED   0xF800
+#define GREEN 0x07E0
+
+// Box and button sizes
+int boxX = 60;
+int boxY = 100;
+int boxWidth = 200;
+int boxHeight = 50;
+
+int buttonSize = 50;
+
+// Delay values for each chip
+int delayValue[8] = {50, 50, 50, 50, 50, 50, 50, 50}; // Initial delay for all 8 chips
+int currentChip = 0;  // Track which chip is currently selected (0 to 7)
+
+// Define shared pins for all DS1023 Chips
+#define DATA_PIN 51  // MOSI pin on Arduino Mega (same for all chips)
+#define CLK_PIN  52  // SCK pin on Arduino Mega (same for all chips)
+
+// Define separate LE_PIN for each chip
+#define LE_PIN_1   53  // Pin to control LE (latch enable) for Chip 1
+#define LE_PIN_2   50  // Pin to control LE (latch enable) for Chip 2
+#define LE_PIN_3   49  // Pin to control LE (latch enable) for Chip 3
+#define LE_PIN_4   48  // Pin to control LE (latch enable) for Chip 4
+#define LE_PIN_5   47  // Pin to control LE (latch enable) for Chip 5
+#define LE_PIN_6   46  // Pin to control LE (latch enable) for Chip 6
+#define LE_PIN_7   45  // Pin to control LE (latch enable) for Chip 7
+#define LE_PIN_8   44  // Pin to control LE (latch enable) for Chip 8
+
+const int PULSE_PIN_1 = 25;   // Pin for pulse output for Chip 1
+const int PULSE_PIN_2 = 26;   // Pin for pulse output for Chip 2
+const int PULSE_PIN_3 = 27;   // Pin for pulse output for Chip 3
+const int PULSE_PIN_4 = 28;   // Pin for pulse output for Chip 4
+const int PULSE_PIN_5 = 29;   // Pin for pulse output for Chip 5
+const int PULSE_PIN_6 = 30;   // Pin for pulse output for Chip 6
+const int PULSE_PIN_7 = 31;   // Pin for pulse output for Chip 7
+const int PULSE_PIN_8 = 32;   // Pin for pulse output for Chip 8
+
+int nh, nv;
+
+void setup() {
+    Serial.begin(9600);
+    tft.begin();
+    tft.setRotation(1);
+    tft.fillScreen(BLACK);
+
+    pinMode(DATA_PIN, OUTPUT);
+    pinMode(CLK_PIN, OUTPUT);
+
+    pinMode(LE_PIN_1, OUTPUT);
+    pinMode(LE_PIN_2, OUTPUT);
+    pinMode(LE_PIN_3, OUTPUT);
+    pinMode(LE_PIN_4, OUTPUT);
+    pinMode(LE_PIN_5, OUTPUT);
+    pinMode(LE_PIN_6, OUTPUT);
+    pinMode(LE_PIN_7, OUTPUT);
+    pinMode(LE_PIN_8, OUTPUT);
+
+    pinMode(PULSE_PIN_1, OUTPUT);
+    pinMode(PULSE_PIN_2, OUTPUT);
+    pinMode(PULSE_PIN_3, OUTPUT);
+    pinMode(PULSE_PIN_4, OUTPUT);
+    pinMode(PULSE_PIN_5, OUTPUT);
+    pinMode(PULSE_PIN_6, OUTPUT);
+    pinMode(PULSE_PIN_7, OUTPUT);
+    pinMode(PULSE_PIN_8, OUTPUT);
+
+    drawScreen();
+}
+
+void loop() {
+    digitalWrite(PULSE_PIN_1 + currentChip, HIGH);
+    delayMicroseconds(0.1);
+    digitalWrite(PULSE_PIN_1 + currentChip, LOW);
+    delayMicroseconds(0.1);
+
+    readTouch();
+
+    if (isTouched()) {
+        nh = map(tp.x, 100, 927, 320, 0);
+        nv = map(tp.y, 121, 900, 240, 0);
+
+        // Increment button logic
+        if (nh > boxX + boxWidth + 10 && nh < boxX + boxWidth + 10 + buttonSize && nv > boxY && nv < boxY + buttonSize) {
+            delayValue[currentChip] = min(delayValue[currentChip] + 5, 250);
+            setFixedDelay(currentChip + 1, delayValue[currentChip]);
+            drawScreen();
+        }
+
+        // Decrement button logic
+        if (nh > boxX - 10 - buttonSize && nh < boxX - 10 && nv > boxY && nv < boxY + buttonSize) {
+            delayValue[currentChip] = max(delayValue[currentChip] - 5, 0);
+            setFixedDelay(currentChip + 1, delayValue[currentChip]);
+            drawScreen();
+        }
+
+        if (nv > boxY + boxHeight + 20 && nv < boxY + boxHeight + 60) {
+            currentChip = (currentChip + 1) % 8;
+            drawScreen();
+        }
+    }
+}
+
+void readTouch() {
+    tp = myTouch.getPoint();
+    pinMode(YP, OUTPUT);
+    pinMode(XM, OUTPUT);
+    digitalWrite(YP, HIGH);
+    digitalWrite(XM, HIGH);
+}
+
+bool isTouched() {
+    return (tp.z > 10 && tp.z < 1000);
+}
+
+void drawScreen() {
+    tft.fillScreen(BLACK);
+    tft.fillRect(boxX, boxY, boxWidth, boxHeight, RED);
+    tft.setCursor(boxX + 50, boxY + 15);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+    tft.print(delayValue[currentChip]);
+    tft.print(" ns");
+
+    // Draw + and - buttons
+    tft.fillRect(boxX + boxWidth + 10, boxY, buttonSize, buttonSize, GREEN);
+    tft.fillRect(boxX - 10 - buttonSize, boxY, buttonSize, buttonSize, GREEN);
+    tft.setCursor(boxX + boxWidth + 25, boxY + 15);
+    tft.print("+");
+    tft.setCursor(boxX - 10 - buttonSize + 20, boxY + 15);
+    tft.print("-");
+}
+
+void setFixedDelay(int chip, int delayValue) {
+    int valueToSend = delayValue / 2; // Assuming 2 ns step size
+
+    int lePin;
+    switch(chip) {
+        case 1: lePin = LE_PIN_1; break;
+        case 2: lePin = LE_PIN_2; break;
+        case 3: lePin = LE_PIN_3; break;
+        case 4: lePin = LE_PIN_4; break;
+        case 5: lePin = LE_PIN_5; break;
+        case 6: lePin = LE_PIN_6; break;
+        case 7: lePin = LE_PIN_7; break;
+        case 8: lePin = LE_PIN_8; break;
+    }
+
+    digitalWrite(lePin, HIGH);
+
+    for (int i = 7; i >= 0; i--) {
+        digitalWrite(DATA_PIN, (valueToSend >> i) & 0x01);
+        digitalWrite(CLK_PIN, HIGH);
+        delayMicroseconds(1);
+        digitalWrite(CLK_PIN, LOW);
+    }
+
+    digitalWrite(lePin, LOW);
+}
