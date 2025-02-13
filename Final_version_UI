@@ -1,0 +1,435 @@
+/*
+ * Display_control_v1.0
+ * 
+ * test 1. First lets just get the main buttons looking and working as desired.
+ * 
+ * Saved to test 2. add in plus and minus buttons.
+ * 
+ * Saved to test 3 add in sensible handling of plus / minus buttons.
+ * 
+ * Saved to Display_control as it's now close to a working display controller.
+ * 
+ * Fast mode increment and decrement not working as well as I would like.
+ * needs some tweeks to get it working better.
+ * 
+ * Copied in Gaurav's code for writeSetting()
+ * 
+ * Changed pinout to match what has been implemented on the PCB.
+ * 
+ * Updated to the currect channel ofset.
+
+ * Reversed the case number such that channel 1 is at top.
+
+ * Channel 0 added as a dummy channel and re-written to use it from channel 1-8, 9 for all.
+ */
+ 
+#include <Adafruit_GFX.h>
+#include <MCUFRIEND_kbv.h>
+#include <TouchScreen.h>
+#define MINPRESSURE 5
+#define MAXPRESSURE 1000
+
+#define BLACK   0x0000
+#define BLUE    0x001F
+#define RED     0xF800
+#define GREEN   0x07E0
+#define CYAN    0x07FF
+#define MAGENTA 0xF81F
+#define YELLOW  0xFFE0
+#define WHITE   0xFFFF
+
+// Define shared pins for all DS1023 Chips
+#define DATA_PIN 46  // MOSI pin on Arduino Mega (same for all chips)
+#define CLK_PIN  44  // SCK pin on Arduino Mega (same for all chips)
+
+// Define separate LE_PIN for each chip
+#define LE_PIN_1   22  // Pin to control LE (latch enable) for Chip 1
+#define LE_PIN_2   24  // Pin to control LE (latch enable) for Chip 2
+#define LE_PIN_3   26  // Pin to control LE (latch enable) for Chip 3
+#define LE_PIN_4   28  // Pin to control LE (latch enable) for Chip 4
+#define LE_PIN_5   30  // Pin to control LE (latch enable) for Chip 5
+#define LE_PIN_6   32  // Pin to control LE (latch enable) for Chip 6
+#define LE_PIN_7   34  // Pin to control LE (latch enable) for Chip 7
+#define LE_PIN_8   36  // Pin to control LE (latch enable) for Chip 8
+
+// Touch panel.
+const int XP = 8, XM = A2, YP = A3, YM = 9;                            // TFT type ID=0x9341 pin connections
+const int TS_LEFT = 921, TS_RT = 96, TS_TOP = 83, TS_BOT = 917;        // calibration values
+
+int delayValue[10]   = {0, 128, 128, 128, 128, 128, 128, 128, 128, 128};   // Initial delay value all 9 channels
+int text_x[10]     = {0, 70, 190, 70, 190, 70, 190, 70, 190, 70};          // x position for delay text 
+int text_y[10]     = {0, 20, 20, 70, 70, 120, 120, 170, 170, 220};         // y position for delay text 
+int tbox_x[10]     = {0, 70, 190, 70, 190, 70, 190, 70, 190, 70};          // x position for delay text box
+int tbox_y[10]     = {0, 20, 20, 70, 70, 120, 120, 170, 170, 220};         // y position for delay text box
+int minDelay      = 0;                                                 // minimun allowed setting
+int maxDelay      = 510;                                               // maximum allowed setting
+
+// Track which channel is currently selected.
+int currentChannel = 0;                                                // 0 = none, chan 1 to 8, 9 = all.
+int lastChannel = 0;                                                   // for cleanup
+int i;                                                                 // general purpose
+
+int stepsize = 2;
+int hold = 0;
+
+MCUFRIEND_kbv tft;
+//TouchScreen ts = TouchScreen(X+, Y+, X-, Y-, Ohms X+ to X- );        
+TouchScreen ts = TouchScreen(XP, YP, XM, YM, 350);                    // create touchscreen
+
+Adafruit_GFX_Button ch1_btn, ch2_btn, ch3_btn, ch4_btn;               // create buttons
+Adafruit_GFX_Button ch5_btn, ch6_btn, ch7_btn, ch8_btn;
+Adafruit_GFX_Button all_btn, done_btn, plus_btn, minus_btn;
+Adafruit_GFX_Button plus2_btn, minus2_btn;
+
+int pixel_x, pixel_y;                                                 //Touch_getXY() updates global vars
+
+void setup(void)
+{
+    Serial.begin(9600);
+    uint16_t ID = tft.readID();
+    tft.begin(ID);
+    tft.setRotation(0);                                               // sets PORTRAIT mode
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+
+    // Initialize shared pins for all DS1023 Chips
+    pinMode(DATA_PIN, OUTPUT);
+    pinMode(CLK_PIN, OUTPUT);
+
+    // Initialize separate LE pins for all DS1023 Chips
+    pinMode(LE_PIN_1, OUTPUT);
+    pinMode(LE_PIN_2, OUTPUT);
+    pinMode(LE_PIN_3, OUTPUT);
+    pinMode(LE_PIN_4, OUTPUT);
+    pinMode(LE_PIN_5, OUTPUT);
+    pinMode(LE_PIN_6, OUTPUT);
+    pinMode(LE_PIN_7, OUTPUT);
+    pinMode(LE_PIN_8, OUTPUT);
+    
+    ch1_btn.initButton(&tft,  30, 30, 50, 40, WHITE, CYAN, BLACK, "CH1", 2);
+    ch2_btn.initButton(&tft,  150, 30, 50, 40, WHITE, CYAN, BLACK, "CH2", 2);
+    ch3_btn.initButton(&tft,  30, 80, 50, 40, WHITE, CYAN, BLACK, "CH3", 2);
+    ch4_btn.initButton(&tft,  150, 80, 50, 40, WHITE, CYAN, BLACK, "CH4", 2);
+    ch5_btn.initButton(&tft,  30, 130, 50, 40, WHITE, CYAN, BLACK, "CH5", 2);
+    ch6_btn.initButton(&tft,  150, 130, 50, 40, WHITE, CYAN, BLACK, "CH6", 2);
+    ch7_btn.initButton(&tft,  30, 180, 50, 40, WHITE, CYAN, BLACK, "CH7", 2);
+    ch8_btn.initButton(&tft,  150, 180, 50, 40, WHITE, CYAN, BLACK, "CH8", 2);
+    all_btn.initButton(&tft,  30, 230, 50, 40, WHITE, CYAN, BLACK, "ALL", 2);
+    done_btn.initButton(&tft,  180, 230, 100, 40, WHITE, CYAN, BLACK, "DONE/SET", 2);
+    minus2_btn.initButton(&tft,  30, 290, 50, 60, WHITE, CYAN, BLACK, "--", 2);
+    minus_btn.initButton(&tft,  90, 290, 50, 60, WHITE, CYAN, BLACK, "-", 2);
+    plus_btn.initButton(&tft,  150, 290, 50, 60, WHITE, CYAN, BLACK, "+", 2);
+    plus2_btn.initButton(&tft,  210, 290, 50, 60, WHITE, CYAN, BLACK, "++", 2);
+
+
+init_display();  // could rename to drawDisplay() ??
+}
+
+void loop(void)
+{
+    bool down = Touch_getXY();
+    
+// has a button been pressed ?    
+    ch1_btn.press(down && ch1_btn.contains(pixel_x, pixel_y));
+    ch2_btn.press(down && ch2_btn.contains(pixel_x, pixel_y));
+    ch3_btn.press(down && ch3_btn.contains(pixel_x, pixel_y));
+    ch4_btn.press(down && ch4_btn.contains(pixel_x, pixel_y));
+    ch5_btn.press(down && ch5_btn.contains(pixel_x, pixel_y));
+    ch6_btn.press(down && ch6_btn.contains(pixel_x, pixel_y));
+    ch7_btn.press(down && ch7_btn.contains(pixel_x, pixel_y));
+    ch8_btn.press(down && ch8_btn.contains(pixel_x, pixel_y));
+    all_btn.press(down && all_btn.contains(pixel_x, pixel_y));
+    done_btn.press(down && done_btn.contains(pixel_x, pixel_y));
+    plus_btn.press(down && plus_btn.contains(pixel_x, pixel_y));
+    minus_btn.press(down && minus_btn.contains(pixel_x, pixel_y));
+    plus2_btn.press(down && plus2_btn.contains(pixel_x, pixel_y));
+    minus2_btn.press(down && minus2_btn.contains(pixel_x, pixel_y));
+       
+    if (ch1_btn.justPressed()) {
+        ch1_btn.drawButton(true);
+        currentChannel = 1;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();  // resets all other buttons
+        }
+    }
+    if (ch2_btn.justPressed()) {
+        ch2_btn.drawButton(true);
+        currentChannel = 2;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();
+        }
+    }
+    if (ch3_btn.justPressed()) {
+        ch3_btn.drawButton(true);
+        currentChannel = 3;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();
+        }
+    }
+    if (ch4_btn.justPressed()) {
+        ch4_btn.drawButton(true);
+        currentChannel = 4;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();
+        }
+    }
+    if (ch5_btn.justPressed()) {
+        ch5_btn.drawButton(true);
+        currentChannel = 5;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();
+        }
+    }
+    if (ch6_btn.justPressed()) {
+        ch6_btn.drawButton(true);
+        currentChannel = 6;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();
+        }
+    }
+    if (ch7_btn.justPressed()) {
+        ch7_btn.drawButton(true);
+        currentChannel = 7;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();
+        }
+    }
+    if (ch8_btn.justPressed()) {
+        ch8_btn.drawButton(true);
+        currentChannel = 8;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();
+        }
+    }
+    if (all_btn.justPressed()) {
+        all_btn.drawButton(true);
+        currentChannel = 9;
+        if(currentChannel != lastChannel)
+        {
+          cleanupButtons();
+        }
+    }
+
+    if( ( currentChannel > 0 ) && (currentChannel < 10) && (plus2_btn.justPressed() ) )
+    {
+      increment(20);
+    }
+
+    if( ( currentChannel > 0 ) && (currentChannel < 10) && (plus_btn.justPressed() ) )
+    {
+      increment(2);
+    }
+
+    if( ( currentChannel > 0 ) && (currentChannel < 10) && (minus2_btn.justPressed() ) )
+    {
+      decrement(20);
+    }
+
+    if( ( currentChannel > 0 ) && (currentChannel < 10) && (minus_btn.justPressed() ) )
+    {
+      decrement(2);
+    }
+
+    if (done_btn.justPressed()) {
+        currentChannel = 0;
+        if(currentChannel != lastChannel)
+        {
+          if ( lastChannel == 9 )
+          {
+             updateValues(); // change all other channels to match 9
+          }
+          cleanupButtons();
+        }
+    }
+}
+
+bool Touch_getXY(void)
+{
+    TSPoint p = ts.getPoint();
+    pinMode(YP, OUTPUT);      //restore shared pins
+    pinMode(XM, OUTPUT);
+    digitalWrite(YP, HIGH);   //because TFT control pins
+    digitalWrite(XM, HIGH);
+    bool pressed = (p.z > MINPRESSURE && p.z < MAXPRESSURE);
+    if (pressed) {
+        pixel_x = map(p.x, TS_LEFT, TS_RT, 0, 240); //works for our setup
+        pixel_y = map(p.y, TS_TOP, TS_BOT, 0, 320);
+    }
+    return pressed;
+}
+
+void init_display()
+{
+    tft.fillScreen(BLACK);
+    ch1_btn.drawButton(false);
+    ch2_btn.drawButton(false);
+    ch3_btn.drawButton(false);
+    ch4_btn.drawButton(false);
+    ch5_btn.drawButton(false);
+    ch6_btn.drawButton(false);
+    ch7_btn.drawButton(false);
+    ch8_btn.drawButton(false);
+    all_btn.drawButton(false);
+    done_btn.drawButton(false);
+    plus_btn.drawButton(false);
+    minus_btn.drawButton(false);
+    plus2_btn.drawButton(false);
+    minus2_btn.drawButton(false);
+
+    tft.setTextColor(WHITE);
+    tft.setTextSize(2);
+
+    for( i = 1 ; i < 10 ; i++)
+    {
+    tft.setCursor(text_x[i], text_y[i]);
+    tft.print(delayValue[i]);
+    }
+}
+
+void cleanupButtons() 
+{
+  switch(lastChannel) {
+      case 0:
+      break;
+      case 1:
+      ch1_btn.drawButton(false);
+      break;
+      case 2:
+      ch2_btn.drawButton(false);
+      break;
+      case 3:
+      ch3_btn.drawButton(false);
+      break;
+      case 4:
+      ch4_btn.drawButton(false);
+      break;
+      case 5:
+      ch5_btn.drawButton(false);
+      break;
+      case 6:
+      ch6_btn.drawButton(false);
+      break;
+      case 7:
+      ch7_btn.drawButton(false);
+      break;
+      case 8:
+      ch8_btn.drawButton(false);
+      break;
+      case 9:
+      all_btn.drawButton(false);
+      break;
+  }
+  lastChannel = currentChannel;
+}
+
+void updateValues()
+{
+      for ( i =1  ; i < 9 ; i++)
+        {
+        delayValue[i] = delayValue[9];
+        tft.fillRect(tbox_x[i], tbox_y[i], 40, 40, BLACK);  // erase existing displaed value
+        tft.setTextColor(WHITE);
+        tft.setCursor(text_x[i], text_y[i]);
+        tft.print(delayValue[i]);
+        writeSetting(i, (delayValue[i] /2) );
+        }
+}
+
+void increment( int step)
+{
+//    int j = currentChannel - 1;
+    bool down;  // = Touch_getXY();
+    bool pip = 1;   //plus_btn.isPressed();
+    
+    while ( pip )
+    {
+      down = Touch_getXY();
+      plus_btn.press(down && plus_btn.contains(pixel_x, pixel_y));
+      pip = plus_btn.isPressed();
+
+      if( delayValue[currentChannel] < ( maxDelay - ( step - 1 )) )
+      {
+        delayValue[currentChannel]+=step;
+        tft.fillRect(tbox_x[currentChannel], tbox_y[currentChannel], 40, 40, BLACK);
+        tft.setTextColor(WHITE);
+        tft.setCursor(text_x[currentChannel], text_y[currentChannel]);
+        tft.print(delayValue[currentChannel]);
+        writeSetting(currentChannel, (delayValue[currentChannel] /2) );
+      }
+      delay(300);
+    }
+}
+
+void decrement( int step)
+{
+//    int j = currentChannel - 1;
+    bool down;  // = Touch_getXY();
+    bool mip = 1;   //= minus_btn.isPressed();
+    
+    while ( mip )
+    {
+      down = Touch_getXY();
+      minus_btn.press(down && minus_btn.contains(pixel_x, pixel_y));
+      mip = minus_btn.isPressed();
+
+      if( delayValue[currentChannel] > ( minDelay + ( step - 1 )) )
+      {
+        delayValue[currentChannel]-=step;
+        tft.fillRect(tbox_x[currentChannel], tbox_y[currentChannel], 40, 40, BLACK);
+        tft.setTextColor(WHITE);
+        tft.setCursor(text_x[currentChannel], text_y[currentChannel]);
+        tft.print(delayValue[currentChannel]);
+        writeSetting(currentChannel, (delayValue[currentChannel] /2) );
+      }
+      delay(300);
+    }
+}
+
+// need to ceate proper function to write delay values to the chips
+// but this will do for now.
+
+void writeSetting ( int channel, int setting )
+{
+    int lePin;
+    switch(channel) {
+        case 8: lePin = LE_PIN_1; break;
+        case 7: lePin = LE_PIN_2; break;
+        case 6: lePin = LE_PIN_3; break;
+        case 5: lePin = LE_PIN_4; break;
+        case 4: lePin = LE_PIN_5; break;
+        case 3: lePin = LE_PIN_6; break;
+        case 2: lePin = LE_PIN_7; break;
+        case 1: lePin = LE_PIN_8; break;
+    }
+
+    // Set LE high to start communication
+    digitalWrite(lePin, HIGH);
+
+    // Clock out the 8-bit delay value (MSB first)
+    for (int i = 7; i >= 0; i--) {
+        // Write the data bit (MSB first)
+        digitalWrite(DATA_PIN, (setting >> i) & 0x01);
+        digitalWrite(CLK_PIN, HIGH);
+        delayMicroseconds(1); // Small delay for clock pulse
+        digitalWrite(CLK_PIN, LOW);
+    }
+
+    // Set LE low to latch the value
+    digitalWrite(lePin, LOW);
+
+//    // Debug output
+//    Serial.print("Current Delay for Channel ");
+//    Serial.print(channel);
+//    Serial.print(": ");
+//    Serial.print(setting * 2);
+//    Serial.println(" ns");
+
+}
